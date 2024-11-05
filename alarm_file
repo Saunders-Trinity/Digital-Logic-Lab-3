@@ -1,0 +1,205 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+--use IEEE.STD_LOGIC_ARITH.ALL;
+--use IEEE.STD_LOGIC_UNSIGNED.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+
+entity alarm_file is
+    Port (    
+              clk : in std_logic;
+              rst : in std_logic;
+              sw1 : in std_logic;
+              sw2 : in std_logic;
+              sw3 : in std_logic;
+              sw4 : in std_logic;
+			  hex_1out : out std_logic_vector(6 downto 0);
+			  hex_2out : out std_logic_vector(6 downto 0);
+			  hex_3out : out std_logic_vector(6 downto 0);
+			  hex_4out : out std_logic_vector(6 downto 0);
+			  bell : out std_logic
+			  );
+           
+end alarm_file;
+
+
+
+architecture Behavioral of alarm_file is
+
+    type state_t is (TIM3, SET_TIME, SET_ALARM);
+    signal state_r: state_t;
+
+		signal data_hrs_s, data_min_s : std_logic_vector(6 downto 0);
+		signal alarm_val_hrs_s, alarm_val_min_s, time_hrs_s, time_min_s : unsigned(6 downto 0);
+
+    signal counter_s : unsigned(31 downto 0);
+    signal clk_div_s, alarm_active_s, alarm_sel_s : std_logic;
+	 
+	 component two_digit_split
+	 port( data_in : in STD_LOGIC_VECTOR (6 downto 0);
+				hex_1out : out std_logic_vector(6 downto 0);
+			  hex_2out : out std_logic_vector(6 downto 0) );
+	end component;
+	 
+	 component Clock
+	 port(clk_in  : in std_logic;
+			clk_out  : out std_logic);
+	end component;
+	 
+	 
+	 
+	
+begin
+
+
+    U_HRS : two_digit_split
+    Port map( 
+            data_in => data_hrs_s,
+			hex_1out => hex_3out,
+			hex_2out => hex_4out
+			  );
+
+
+
+    U_MIN : two_digit_split
+    Port map( 
+            data_in => data_min_s,
+			hex_1out => hex_1out,
+			hex_2out => hex_2out
+			  );
+
+	--U_CLK_DIV : entity work...
+	--implement your own clock divider
+	U_Clk_DIV: Clock
+	Port map(clk_in => clk,
+				clk_out => clk_div_s);
+							
+
+
+    sync_proc: process(clk_div_s, rst)
+    
+    begin
+        
+        if(rst = '1') then
+            state_r <= TIM3;
+            bell <= '0';
+            alarm_active_s <= '0';
+            alarm_sel_s <= '0';
+            alarm_val_hrs_s <= (others => '0');
+            alarm_val_min_s <= (others => '0');
+            time_hrs_s <= (others => '0');
+            time_min_s <= (others => '0');
+        elsif(rising_edge(clk_div_s)) then
+                  
+            case(state_r) is
+
+              when TIM3 =>
+                
+                --check to see if we have hit the alarm              
+                if((alarm_val_hrs_s = time_hrs_s or alarm_val_hrs_s = 0 or alarm_val_hrs_s = time_hrs_s + 1) and alarm_active_s = '1') then
+                    if((alarm_val_min_s = 0 and time_min_s = 59) or (alarm_val_min_s = time_min_s + 1)) then
+                        bell <= '1';
+								
+                    end if;
+                 end if;               
+                
+                
+                --run time increment checks
+					 --TOTAL ROLLOVER
+                if(time_hrs_s = 23 and time_min_s = 59) then
+                               
+                    time_hrs_s <= (others => '0');
+                    time_min_s <= (others => '0');
+                    --HOUR INCREMENT
+                elsif(time_min_s = 59) then
+                
+                    time_hrs_s <= time_hrs_s + 1;
+                    time_min_s <= (others => '0');
+                    
+                else
+                   time_min_s <= time_min_s + 1;
+                end if;
+                
+                
+                --run button checks
+                if(sw1 = '1' and sw2 = '0') then
+                    state_r <= SET_TIME;
+                elsif(sw2 = '1' and sw1 = '0') then
+                    alarm_sel_s <= '1';
+                    state_r <= SET_ALARM;
+                else
+                    state_r <= TIM3;
+                end if;
+                
+                
+
+              when SET_TIME =>
+                
+		--return to time state         
+                if(sw1 = '0') then
+                    state_r <= TIM3;
+                else
+		    --increment minutes
+                if(sw3 = '1') then
+									--add code here
+								if (time_min_s = 59) then
+										time_min_s <= (others => '0'); -- Reset minutes to 00
+								else	
+										time_min_s <= time_min_s + 1;  -- Increment minutes
+											--increment hrs    
+								end if;
+                 elsif(sw4 = '1') then
+			--add code here
+							if (time_hrs_s = 23) then
+							time_hrs_s <= (others => '0'); -- Reset hours to 00    
+								else
+									time_hrs_s <= time_hrs_s + 1;  -- Increment hours
+
+                    end if;
+							end if;
+                    --state_r <= SET_TIME;
+                end if;               
+                
+                
+                
+              when SET_ALARM =>
+
+                if(sw2 = '0') then
+                    alarm_active_s <= '1';
+                    alarm_sel_s <= '0';
+                    state_r <= TIM3;
+                else
+							if(sw3 = '1' and sw4 = '0' ) then --added code as of 10/2
+								if(alarm_val_min_s = 59) then
+									alarm_val_min_s <= (others => '0');
+								else
+									alarm_val_min_s <= alarm_val_min_s + 1;
+								end if;
+							end if;
+								
+							if( sw3 = '0' and sw4 = '1')then
+								if(alarm_val_hrs_s = 23) then 
+								alarm_val_hrs_s <= (others => '0');
+								else
+								alarm_val_hrs_s <= alarm_val_hrs_s + 1;--this increment minutes
+								end if;
+							end if;
+					
+
+                    --state_r <= SET_ALARM;
+             
+					
+				end if;
+					
+            end case; --end state "'case'"
+
+        end if; --end clock edge "'if'"
+		
+    end process; --end state process
+
+
+    
+    data_hrs_s <= std_logic_vector(time_hrs_s) when (alarm_sel_s = '0') else std_logic_vector(alarm_val_hrs_s);
+    data_min_s <= std_logic_vector(time_min_s) when (alarm_sel_s = '0') else std_logic_vector(alarm_val_min_s);
+
+end architecture;
